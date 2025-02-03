@@ -1661,8 +1661,10 @@ incaip_config: unconfig
 tb0229_config: unconfig
 	@./mkconfig $(@:_config=) mips mips tb0229
 
-rt2880_config: unconfig
-	@./mkconfig $(@:_config=) mips ralink_soc rt2880
+.PHONY: rt2880_config
+rt2880_config:
+# rt2880_config: unconfig
+# 	@./mkconfig $(@:_config=) mips ralink_soc rt2880
 #########################################################################
 ## MIPS32 AU1X00
 #########################################################################
