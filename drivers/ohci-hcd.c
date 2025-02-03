@@ -772,7 +772,7 @@ static void periodic_unlink(struct ohci *ohci, volatile struct ed *ed,
  * just the link to the ed is unlinked.
  * the link from the ed still points to another operational ed or 0
  * so the HC can eventually finish the processing of the unlinked ed */
-static int ep_unlink(ohci_t *ohci, ed_t *edi)
+int ep_unlink(ohci_t *ohci, ed_t *edi)
 {
 	volatile ed_t *ed = edi;
 	int i;
