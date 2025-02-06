@@ -1,171 +1,307 @@
+#ifndef __LINUX_COMPILER_H
+#define __LINUX_COMPILER_H
+
+#ifndef __ASSEMBLY__
+
+#ifdef __CHECKER__
+# define __user		__attribute__((noderef, address_space(1)))
+# define __kernel	__attribute__((address_space(0)))
+# define __safe		__attribute__((safe))
+# define __force	__attribute__((force))
+# define __nocast	__attribute__((nocast))
+# define __iomem	__attribute__((noderef, address_space(2)))
+# define __acquires(x)	__attribute__((context(x,0,1)))
+# define __releases(x)	__attribute__((context(x,1,0)))
+# define __acquire(x)	__context__(x,1)
+# define __release(x)	__context__(x,-1)
+# define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
+# define __percpu	__attribute__((noderef, address_space(3)))
+# define __rcu
+extern void __chk_user_ptr(const volatile void __user *);
+extern void __chk_io_ptr(const volatile void __iomem *);
+#else
+# define __user
+# define __kernel
+# define __safe
+# define __force
+# define __nocast
+# define __iomem
+# define __chk_user_ptr(x) (void)0
+# define __chk_io_ptr(x) (void)0
+# define __builtin_warning(x, y...) (1)
+# define __acquires(x)
+# define __releases(x)
+# define __acquire(x) (void)0
+# define __release(x) (void)0
+# define __cond_lock(x,c) (c)
+# define __percpu
+# define __rcu
+#endif
+
+#ifdef __KERNEL__
+
+#ifdef __GNUC__
+#include <linux/compiler-gcc.h>
+#endif
+
+#define notrace __attribute__((no_instrument_function))
+
+/* Intel compiler defines __GNUC__. So we will overwrite implementations
+ * coming from above header files here
+ */
+#ifdef __INTEL_COMPILER
+# include <linux/compiler-intel.h>
+#endif
+
 /*
- * Keep all the ugly #ifdef for system stuff here
+ * Generic compiler-dependent macros required for kernel
+ * build go below this comment. Actual compiler/compiler version
+ * specific implementations come from the above header files
  */
 
-#ifndef __COMPILER_H__
-#define __COMPILER_H__
+struct ftrace_branch_data {
+	const char *func;
+	const char *file;
+	unsigned line;
+	union {
+		struct {
+			unsigned long correct;
+			unsigned long incorrect;
+		};
+		struct {
+			unsigned long miss;
+			unsigned long hit;
+		};
+		unsigned long miss_hit[2];
+	};
+};
 
-#include <stddef.h>
-#include <stdbool.h>
-
-#ifdef USE_HOSTCC
-
-#if defined(__BEOS__)	 || \
-    defined(__NetBSD__)  || \
-    defined(__FreeBSD__) || \
-    defined(__sun__)	 || \
-    defined(__APPLE__)
-# include <inttypes.h>
-#elif defined(__linux__) || defined(__WIN32__) || defined(__MINGW32__) || defined(__OpenBSD__)
-# include <stdint.h>
-#endif
-
-#include <errno.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#if !defined(__WIN32__) && !defined(__MINGW32__)
-# include <sys/mman.h>
-#endif
-
-/* Not all systems (like Windows) has this define, and yes
- * we do replace/emulate mmap() on those systems ...
- */
-#ifndef MAP_FAILED
-# define MAP_FAILED ((void *)-1)
-#endif
-
-#include <fcntl.h>
-#ifndef O_BINARY		/* should be define'd on __WIN32__ */
-#define O_BINARY	0
-#endif
-
-#ifdef __linux__
-# include <endian.h>
-# include <byteswap.h>
-#elif defined(__MACH__) || defined(__FreeBSD__)
-# include <machine/endian.h>
-#endif
-#ifdef __FreeBSD__
-# include <sys/endian.h> /* htole32 and friends */
-# define __BYTE_ORDER BYTE_ORDER
-# define __LITTLE_ENDIAN LITTLE_ENDIAN
-# define __BIG_ENDIAN BIG_ENDIAN
-#elif defined(__OpenBSD__)
-# include <endian.h>
-# define __BYTE_ORDER BYTE_ORDER
-# define __LITTLE_ENDIAN LITTLE_ENDIAN
-# define __BIG_ENDIAN BIG_ENDIAN
-#endif
-
-#include <time.h>
-
-typedef uint8_t __u8;
-typedef uint16_t __u16;
-typedef uint32_t __u32;
-typedef unsigned int uint;
-typedef unsigned long ulong;
-
-/* Define these on the host so we can build some target code */
-typedef __u32 u32;
-
-#define uswap_16(x) \
-	((((x) & 0xff00) >> 8) | \
-	 (((x) & 0x00ff) << 8))
-#define uswap_32(x) \
-	((((x) & 0xff000000) >> 24) | \
-	 (((x) & 0x00ff0000) >>  8) | \
-	 (((x) & 0x0000ff00) <<  8) | \
-	 (((x) & 0x000000ff) << 24))
-#define _uswap_64(x, sfx) \
-	((((x) & 0xff00000000000000##sfx) >> 56) | \
-	 (((x) & 0x00ff000000000000##sfx) >> 40) | \
-	 (((x) & 0x0000ff0000000000##sfx) >> 24) | \
-	 (((x) & 0x000000ff00000000##sfx) >>  8) | \
-	 (((x) & 0x00000000ff000000##sfx) <<  8) | \
-	 (((x) & 0x0000000000ff0000##sfx) << 24) | \
-	 (((x) & 0x000000000000ff00##sfx) << 40) | \
-	 (((x) & 0x00000000000000ff##sfx) << 56))
-#if defined(__GNUC__)
-# define uswap_64(x) _uswap_64(x, ull)
-#else
-# define uswap_64(x) _uswap_64(x, )
-#endif
-
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-# define cpu_to_le16(x)		(x)
-# define cpu_to_le32(x)		(x)
-# define cpu_to_le64(x)		(x)
-# define le16_to_cpu(x)		(x)
-# define le32_to_cpu(x)		(x)
-# define le64_to_cpu(x)		(x)
-# define cpu_to_be16(x)		uswap_16(x)
-# define cpu_to_be32(x)		uswap_32(x)
-# define cpu_to_be64(x)		uswap_64(x)
-# define be16_to_cpu(x)		uswap_16(x)
-# define be32_to_cpu(x)		uswap_32(x)
-# define be64_to_cpu(x)		uswap_64(x)
-#else
-# define cpu_to_le16(x)		uswap_16(x)
-# define cpu_to_le32(x)		uswap_32(x)
-# define cpu_to_le64(x)		uswap_64(x)
-# define le16_to_cpu(x)		uswap_16(x)
-# define le32_to_cpu(x)		uswap_32(x)
-# define le64_to_cpu(x)		uswap_64(x)
-# define cpu_to_be16(x)		(x)
-# define cpu_to_be32(x)		(x)
-# define cpu_to_be64(x)		(x)
-# define be16_to_cpu(x)		(x)
-# define be32_to_cpu(x)		(x)
-# define be64_to_cpu(x)		(x)
-#endif
-
-#else /* !USE_HOSTCC */
-
-/* Type for `void *' pointers. */
-typedef unsigned long int uintptr_t;
-
-#include <linux/string.h>
-#include <linux/types.h>
-#include <asm/byteorder.h>
-
-#if __SIZEOF_LONG__ == 8
-# define __WORDSIZE	64
-#elif __SIZEOF_LONG__ == 4
-# define __WORDSIZE	32
-#else
 /*
- * Assume 32-bit for now - only newer toolchains support this feature and
- * this is only required for sandbox support at present.
+ * Note: DISABLE_BRANCH_PROFILING can be used by special lowlevel code
+ * to disable branch tracing on a per file basis.
  */
-#define __WORDSIZE	32
-#endif
+#if defined(CONFIG_TRACE_BRANCH_PROFILING) \
+    && !defined(DISABLE_BRANCH_PROFILING) && !defined(__CHECKER__)
+void ftrace_likely_update(struct ftrace_branch_data *f, int val, int expect);
 
-#endif /* USE_HOSTCC */
+#define likely_notrace(x)	__builtin_expect(!!(x), 1)
+#define unlikely_notrace(x)	__builtin_expect(!!(x), 0)
 
-#define likely(x)	__builtin_expect(!!(x), 1)
-#define unlikely(x)	__builtin_expect(!!(x), 0)
+#define __branch_check__(x, expect) ({					\
+			int ______r;					\
+			static struct ftrace_branch_data		\
+				__attribute__((__aligned__(4)))		\
+				__attribute__((section("_ftrace_annotated_branch"))) \
+				______f = {				\
+				.func = __func__,			\
+				.file = __FILE__,			\
+				.line = __LINE__,			\
+			};						\
+			______r = likely_notrace(x);			\
+			ftrace_likely_update(&______f, ______r, expect); \
+			______r;					\
+		})
 
-#ifdef __LP64__
-#define MEM_SUPPORT_64BIT_DATA	1
+/*
+ * Using __builtin_constant_p(x) to ignore cases where the return
+ * value is always the same.  This idea is taken from a similar patch
+ * written by Daniel Walker.
+ */
+# ifndef likely
+#  define likely(x)	(__builtin_constant_p(x) ? !!(x) : __branch_check__(x, 1))
+# endif
+# ifndef unlikely
+#  define unlikely(x)	(__builtin_constant_p(x) ? !!(x) : __branch_check__(x, 0))
+# endif
+
+#ifdef CONFIG_PROFILE_ALL_BRANCHES
+/*
+ * "Define 'is'", Bill Clinton
+ * "Define 'if'", Steven Rostedt
+ */
+#define if(cond, ...) __trace_if( (cond , ## __VA_ARGS__) )
+#define __trace_if(cond) \
+	if (__builtin_constant_p((cond)) ? !!(cond) :			\
+	({								\
+		int ______r;						\
+		static struct ftrace_branch_data			\
+			__attribute__((__aligned__(4)))			\
+			__attribute__((section("_ftrace_branch")))	\
+			______f = {					\
+				.func = __func__,			\
+				.file = __FILE__,			\
+				.line = __LINE__,			\
+			};						\
+		______r = !!(cond);					\
+		______f.miss_hit[______r]++;					\
+		______r;						\
+	}))
+#endif /* CONFIG_PROFILE_ALL_BRANCHES */
+
 #else
-#define MEM_SUPPORT_64BIT_DATA	0
+# define likely(x)	__builtin_expect(!!(x), 1)
+# define unlikely(x)	__builtin_expect(!!(x), 0)
 #endif
 
-/**
- * tools_build() - check if we are building host tools
+/* Optimization barrier */
+#ifndef barrier
+# define barrier() __memory_barrier()
+#endif
+
+/* Unreachable code */
+#ifndef unreachable
+# define unreachable() do { } while (1)
+#endif
+
+#ifndef RELOC_HIDE
+# define RELOC_HIDE(ptr, off)					\
+  ({ unsigned long __ptr;					\
+     __ptr = (unsigned long) (ptr);				\
+    (typeof(ptr)) (__ptr + (off)); })
+#endif
+
+#endif /* __KERNEL__ */
+
+#endif /* __ASSEMBLY__ */
+
+#ifdef __KERNEL__
+/*
+ * Allow us to mark functions as 'deprecated' and have gcc emit a nice
+ * warning for each use, in hopes of speeding the functions removal.
+ * Usage is:
+ * 		int __deprecated foo(void)
+ */
+#ifndef __deprecated
+# define __deprecated		/* unimplemented */
+#endif
+
+#ifdef MODULE
+#define __deprecated_for_modules __deprecated
+#else
+#define __deprecated_for_modules
+#endif
+
+#ifndef __must_check
+#define __must_check
+#endif
+
+#ifndef CONFIG_ENABLE_MUST_CHECK
+#undef __must_check
+#define __must_check
+#endif
+#ifndef CONFIG_ENABLE_WARN_DEPRECATED
+#undef __deprecated
+#undef __deprecated_for_modules
+#define __deprecated
+#define __deprecated_for_modules
+#endif
+
+/*
+ * Allow us to avoid 'defined but not used' warnings on functions and data,
+ * as well as force them to be emitted to the assembly file.
  *
- * Return: true if building for the host, false if for a target
+ * As of gcc 3.4, static functions that are not marked with attribute((used))
+ * may be elided from the assembly file.  As of gcc 3.4, static data not so
+ * marked will not be elided, but this may change in a future gcc version.
+ *
+ * NOTE: Because distributions shipped with a backported unit-at-a-time
+ * compiler in gcc 3.3, we must define __used to be __attribute__((used))
+ * for gcc >=3.3 instead of 3.4.
+ *
+ * In prior versions of gcc, such functions and data would be emitted, but
+ * would be warned about except with attribute((unused)).
+ *
+ * Mark functions that are referenced only in inline assembly as __used so
+ * the code is emitted even though it appears to be unreferenced.
  */
-static inline bool tools_build(void)
-{
-#ifdef USE_HOSTCC
-	return true;
-#else
-	return false;
+#ifndef __used
+# define __used			/* unimplemented */
 #endif
-}
 
+#ifndef __maybe_unused
+# define __maybe_unused		/* unimplemented */
 #endif
+
+#ifndef __always_unused
+# define __always_unused	/* unimplemented */
+#endif
+
+#ifndef noinline
+#define noinline
+#endif
+
+/*
+ * Rather then using noinline to prevent stack consumption, use
+ * noinline_for_stack instead.  For documentaiton reasons.
+ */
+#define noinline_for_stack noinline
+
+#ifndef __always_inline
+#define __always_inline inline
+#endif
+
+#endif /* __KERNEL__ */
+
+/*
+ * From the GCC manual:
+ *
+ * Many functions do not examine any values except their arguments,
+ * and have no effects except the return value.  Basically this is
+ * just slightly more strict class than the `pure' attribute above,
+ * since function is not allowed to read global memory.
+ *
+ * Note that a function that has pointer arguments and examines the
+ * data pointed to must _not_ be declared `const'.  Likewise, a
+ * function that calls a non-`const' function usually must not be
+ * `const'.  It does not make sense for a `const' function to return
+ * `void'.
+ */
+#ifndef __attribute_const__
+# define __attribute_const__	/* unimplemented */
+#endif
+
+/*
+ * Tell gcc if a function is cold. The compiler will assume any path
+ * directly leading to the call is unlikely.
+ */
+
+#ifndef __cold
+#define __cold
+#endif
+
+/* Simple shorthand for a section definition */
+#ifndef __section
+# define __section(S) __attribute__ ((__section__(#S)))
+#endif
+
+/* Are two types/vars the same type (ignoring qualifiers)? */
+#ifndef __same_type
+# define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+#endif
+
+/* Compile time object size, -1 for unknown */
+#ifndef __compiletime_object_size
+# define __compiletime_object_size(obj) -1
+#endif
+#ifndef __compiletime_warning
+# define __compiletime_warning(message)
+#endif
+#ifndef __compiletime_error
+# define __compiletime_error(message)
+#endif
+
+/*
+ * Prevent the compiler from merging or refetching accesses.  The compiler
+ * is also forbidden from reordering successive instances of ACCESS_ONCE(),
+ * but only when the compiler is aware of some particular ordering.  One way
+ * to make the compiler aware of ordering is to put the two invocations of
+ * ACCESS_ONCE() in different C statements.
+ *
+ * This macro does absolutely -nothing- to prevent the CPU from reordering,
+ * merging, or refetching absolutely anything at any time.  Its main intended
+ * use is to mediate communication between process-level code and irq/NMI
+ * handlers, all running on the same CPU.
+ */
+#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+
+#endif /* __LINUX_COMPILER_H */
